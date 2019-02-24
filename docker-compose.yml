@@ -1,0 +1,66 @@
+version: '3.3'
+#docker network create --driver=overlay --attachable kafka_net
+# cd kafka; docker build -t valli/kafka:2.1.1 .;
+networks:
+  kafka-network:
+    external:
+      name: kafka_net
+      
+services:
+  zookeeper:
+    image: zookeeper:3.5
+    hostname: zookeeper
+    networks:
+      - kafka-network
+    ports:
+    - 2181:2181
+    volumes:
+    - ./data/zookeeper-data:/data
+    - ./data/zookeeper-log:/datalog
+    environment:
+      ZOO_MY_ID: 1
+      ZOO_CLIENT_PORT: 2181
+      
+  kafka:
+    image: valli/kafka:2.1.1
+    hostname: kafka
+    depends_on:
+      - zookeeper
+    networks:
+      - kafka-network
+    ports:
+    - 19092:19092
+    - 9999:9999
+    volumes:
+    - ./data/kafka:/data
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: IN://:9092, OUT://:19092
+      KAFKA_ADVERISED_LISTENERS: IN://kafka:9092, OUT://localhost:19092
+      KAFKA_INTER_BROKER_LISTENER_NAME: IN
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: IN:PLAINTEXT,OUT:PLAINTEXT
+      KAFKA_LOG_DIRS: /data
+      EXTRA_ARGS: "-Dcom.sun.management.jmxremote=true -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Djava.rmi.server.hostname=0.0.0.0 -Dcom.sun.management.jmxremote.rmi.port=9999 -Dcom.sun.management.jmxremote.port=9999 "
+
+  connect:
+    image: valli/kafka:2.1.1
+    hostname: connect
+    depends_on:
+      - zookeeper
+      - kafka
+    networks:
+      - kafka-network
+    ports:
+    - 8083:8083
+    environment:
+      CONNECT_BOOTSTRAP_SERVERS: 'kafka:9092'
+      CONNECT_REST_ADVERTISED_HOST_NAME: localhost
+      CONNECT_REST_PORT: 8083
+      CONNECT_GROUP_ID: connector-consumer-grp
+      CONNECT_KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      CONNECT_VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      CONNECT_KEY_CONVERTER_SCHEMAS_ENABLE: 'false'
+      CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: 'false'
+      CONNECT_PLUGIN_PATH: '/opt/kafka/connect/plugins'
+    command: bash -c "start-connect-distributed.sh"
